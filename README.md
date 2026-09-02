@@ -48,4 +48,8 @@ Join our community of developers creating universal apps.
 
 - [Expo on GitHub](https://github.com/expo/expo): View our open source platform and contribute.
 - [Discord community](https://chat.expo.dev): Chat with Expo users and ask questions.
+<<<<<<< HEAD
 "# BIADORA_CCE106-2063" 
+=======
+"# BIADORA_CCE106-2063" 
+>>>>>>> 0f3923e5a33650827b163092c4db69bcbc43293e
