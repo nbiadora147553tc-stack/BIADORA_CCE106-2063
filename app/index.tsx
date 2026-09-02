@@ -30,7 +30,7 @@ export default function CounterApp({ increment = 1 }: CounterAppProps) {
 
         <View style={styles.controls}>
           <Pressable accessibilityLabel={"Decrease counter by " + step} accessibilityRole="button" disabled={count === 0} onPress={decreaseCount} style={({ pressed }) => [styles.button, styles.decreaseButton, (pressed || count === 0) && styles.buttonPressed]}>
-            <Text style={[styles.buttonText, styles.decreaseText]}>?</Text>
+            <Text style={[styles.buttonText, styles.decreaseText]}>-</Text>
           </Pressable>
           <Pressable accessibilityLabel={"Increase counter by " + step} accessibilityRole="button" onPress={increaseCount} style={({ pressed }) => [styles.button, styles.increaseButton, pressed && styles.buttonPressed]}>
             <Text style={styles.buttonText}>+</Text>
