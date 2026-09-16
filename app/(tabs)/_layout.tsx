@@ -1,21 +1,46 @@
-import { Ionicons } from "@expo/vector-icons";
 import { Tabs } from "expo-router";
+import { Ionicons } from "@expo/vector-icons";
 
-const blue = "#156F8A";
-
-export default function TabLayout() {
+export default function TabsLayout() {
   return (
-    <Tabs screenOptions={{
-      headerStyle: { backgroundColor: "#F8FCFD" },
-      headerTintColor: "#182235",
-      headerTitleStyle: { fontWeight: "700" },
-      tabBarActiveTintColor: blue,
-      tabBarInactiveTintColor: "#75808D",
-      tabBarStyle: { borderTopColor: "#DDE7EA" },
-    }}>
-      <Tabs.Screen name="index" options={{ title: "Home", tabBarIcon: ({ color, size }) => <Ionicons name="home-outline" color={color} size={size} /> }} />
-      <Tabs.Screen name="profile" options={{ title: "Profile", tabBarIcon: ({ color, size }) => <Ionicons name="person-outline" color={color} size={size} /> }} />
-      <Tabs.Screen name="settings" options={{ title: "Settings", tabBarIcon: ({ color, size }) => <Ionicons name="settings-outline" color={color} size={size} /> }} />
+    <Tabs
+      screenOptions={{
+        headerShown: false,
+        tabBarActiveTintColor: "#2563eb",
+      }}
+    >
+      <Tabs.Screen
+        name="index"
+        options={{
+          title: "Home",
+          tabBarIcon: ({ color, size }) => (
+            <Ionicons name="home-outline" size={size} color={color} />
+          ),
+        }}
+      />
+
+      <Tabs.Screen
+        name="events"
+        options={{
+          title: "Events",
+          tabBarIcon: ({ color, size }) => (
+            <Ionicons name="calendar-outline" size={size} color={color} />
+          ),
+        }}
+      />
+
+      <Tabs.Screen
+        name="profile"
+        options={{
+          title: "Profile",
+          tabBarIcon: ({ color, size }) => (
+            <Ionicons name="person-outline" size={size} color={color} />
+          ),
+        }}
+      />
+
+      <Tabs.Screen name="settings" options={{ href: null }} />
+      <Tabs.Screen name="[id]" options={{ href: null }} />
     </Tabs>
   );
 }

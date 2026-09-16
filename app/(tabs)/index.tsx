@@ -1,45 +1,7 @@
 import { Link, useRouter } from "expo-router";
-import { Pressable, SafeAreaView, StyleSheet, Text, View } from "react-native";
-
-export default function HomeScreen() {
-  const router = useRouter();
-
-  return (
-    <SafeAreaView style={styles.safeArea}>
-      <View style={styles.container}>
-        <Text style={styles.eyebrow}>PROJECT</Text>
-        <Text style={styles.title}>Navigation connects screens into one application</Text>
-        <Text style={styles.copy}>Explore a nested Tabs layout and open a course using a dynamic route.</Text>
-
-        <Link href={{ pathname: "/courses/[courseId]", params: { courseId: "cce106" } }} style={styles.primaryLink}>
-          Open CCE 106 course
-        </Link>
-        <Pressable style={styles.secondaryButton} onPress={() => router.push("/courses/cce206")}>
-          <Text style={styles.secondaryText}>Open CCE 206 with router.push</Text>
-        </Pressable>
-
-        <View style={styles.grid}>
-          <InfoCard title="Files" detail="Routes" />
-          <InfoCard title="Layouts" detail="Relationships" />
-          <InfoCard title="Links" detail="Destinations" />
-          <InfoCard title="Router" detail="Actions" />
-        </View>
-      </View>
-    </SafeAreaView>
-  );
-}
-
-function InfoCard({ title, detail }: { title: string; detail: string }) {
-  return <View style={styles.card}><Text style={styles.cardTitle}>{title}</Text><Text style={styles.cardDetail}>{detail}</Text></View>;
-}
-
-const styles = StyleSheet.create({
-  safeArea: { flex: 1, backgroundColor: "#F8FCFD" }, container: { flex: 1, padding: 24, paddingTop: 36 },
-  eyebrow: { color: "#156F8A", fontSize: 11, fontWeight: "800", letterSpacing: 0.8 },
-  title: { color: "#182235", fontSize: 30, fontWeight: "800", lineHeight: 37, marginTop: 18 },
-  copy: { color: "#637080", fontSize: 16, lineHeight: 23, marginTop: 12, marginBottom: 28 },
-  primaryLink: { backgroundColor: "#156F8A", borderRadius: 12, color: "#FFF", fontSize: 16, fontWeight: "700", overflow: "hidden", padding: 16, textAlign: "center" },
-  secondaryButton: { alignItems: "center", borderColor: "#9FC6D0", borderRadius: 12, borderWidth: 1, marginTop: 12, padding: 15 }, secondaryText: { color: "#156F8A", fontWeight: "700" },
-  grid: { flexDirection: "row", flexWrap: "wrap", gap: 12, marginTop: 32 }, card: { backgroundColor: "#FFF", borderBottomColor: "#28A8C7", borderBottomWidth: 3, borderRadius: 10, elevation: 1, padding: 16, width: "47%" },
-  cardTitle: { color: "#156F8A", fontSize: 16, fontWeight: "800" }, cardDetail: { color: "#687585", fontSize: 13, marginTop: 5 },
-});
+import { Pressable, ScrollView, StyleSheet, Text, useWindowDimensions, View } from "react-native";
+import { EventCard } from "../../components/EventCard";
+import { StatCard } from "../../components/StatCard";
+import { events } from "../../data/events";
+export default function HomeScreen() { const router = useRouter(); const { width } = useWindowDimensions(); const isWide = width >= 700; return <ScrollView contentContainerStyle={[styles.container, isWide && styles.wideContainer]} showsVerticalScrollIndicator={false}><Text style={styles.title}>EventMate</Text><Text style={styles.subtitle}>Discover and join campus events.</Text><View style={[styles.stats, isWide && styles.wideStats]}><StatCard value={events.length} title="Upcoming events" /><StatCard value="0" title="Joined events" /></View><Text style={styles.heading}>Coming up</Text>{events.slice(0, 3).map((event) => <EventCard event={event} key={event.id} />)}<Link href="/events" asChild><Pressable style={styles.button}><Text style={styles.buttonText}>Browse all events</Text></Pressable></Link><Pressable onPress={() => router.push(`/event/${events[0].id}`)} style={styles.secondaryButton}><Text style={styles.secondaryButtonText}>Explore featured event</Text></Pressable></ScrollView>; }
+const styles = StyleSheet.create({ button: { alignItems: "center", backgroundColor: "#2563EB", borderRadius: 12, marginTop: 8, padding: 16 }, buttonText: { color: "white", fontWeight: "800" }, container: { backgroundColor: "#F7F9FC", flexGrow: 1, padding: 20, paddingTop: 64 }, heading: { color: "#172033", fontSize: 22, fontWeight: "800", marginBottom: 12 }, secondaryButton: { alignItems: "center", padding: 16 }, secondaryButtonText: { color: "#2563EB", fontWeight: "800" }, stats: { flexDirection: "row", gap: 12, marginBottom: 28 }, subtitle: { color: "#5E6B7E", fontSize: 16, marginBottom: 24 }, title: { color: "#172033", fontSize: 32, fontWeight: "800" }, wideContainer: { alignSelf: "center", maxWidth: 760, width: "100%" }, wideStats: { gap: 18 } });
