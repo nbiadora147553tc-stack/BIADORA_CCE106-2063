@@ -4,9 +4,12 @@ export type AuthUser = {
   firstName: string;
   lastName: string;
   email: string;
+  role?: string;
 };
 
-type LoginResponse = AuthUser & { accessToken?: string; token?: string };
+type ApiError = { message?: string };
+type UserLookup = { users?: Array<Pick<AuthUser, "username" | "email">> };
+type LoginResponse = { accessToken?: string } & ApiError;
 
 export class AuthError extends Error {
   constructor(message: string, public readonly status: number) {
@@ -17,33 +20,39 @@ export class AuthError extends Error {
 
 const API_URL = "https://dummyjson.com";
 
-// Exchange demo credentials for an access token.
-export async function login(username: string, password: string): Promise<string> {
+// DummyJSON authenticates with usernames, so resolve the submitted email first.
+export async function login(email: string, password: string): Promise<string> {
+  const lookupResponse = await fetch(`${API_URL}/users/filter?key=email&value=${encodeURIComponent(email.toLowerCase())}`);
+  const lookup = (await lookupResponse.json()) as UserLookup & ApiError;
+  if (!lookupResponse.ok) {
+    throw new Error(lookup.message ?? "Couldn't find that student account. Check your connection and try again.");
+  }
+  const account = lookup.users?.find((candidate) => candidate.email.toLowerCase() === email.toLowerCase());
+  if (!account) throw new AuthError("Invalid email or password.", 401);
+
   const response = await fetch(`${API_URL}/auth/login`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ username, password, expiresInMins: 60 }),
+    body: JSON.stringify({ username: account.username, password, expiresInMins: 60 }),
   });
-  const data = (await response.json()) as LoginResponse & { message?: string };
+  const data = (await response.json()) as LoginResponse;
+  if (!response.ok) throw new AuthError(data.message ?? "Invalid email or password.", response.status);
 
-  if (!response.ok) {
-    throw new AuthError(data.message ?? "Those login details weren’t accepted.", response.status);
+  // DummyJSON names its JWT field accessToken; store that exact response field.
+  if (typeof data.accessToken !== "string" || !data.accessToken) {
+    throw new Error("The login response did not include an access token.");
   }
-
-  const token = data.accessToken ?? data.token;
-  if (!token) throw new Error("The login response did not include an access token.");
-  return token;
+  return data.accessToken;
 }
 
-// Send the token as a Bearer credential to the protected profile endpoint.
+// Read the protected profile with the saved bearer token.
 export async function getProtectedUser(accessToken: string): Promise<AuthUser> {
   const response = await fetch(`${API_URL}/auth/me`, {
     headers: { Authorization: `Bearer ${accessToken}` },
   });
-  const data = (await response.json()) as AuthUser & { message?: string };
-
+  const data = (await response.json()) as AuthUser & ApiError;
   if (!response.ok) {
-    throw new AuthError(data.message ?? "Your session has expired. Please log in again.", response.status);
+    throw new AuthError(data.message ?? "Session expired, please log in again.", response.status);
   }
   return data;
 }

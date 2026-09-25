@@ -1,7 +1,7 @@
 {
   "expo": {
-    "name": "Quotes App",
-    "slug": "quotes-app",
+    "name": "Authenticated Student Portal",
+    "slug": "authenticated-student-portal",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",

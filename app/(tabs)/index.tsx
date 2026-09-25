@@ -1,9 +1,10 @@
-import { useCallback, useEffect, useState } from "react";
+import { useEffect, useState } from "react";
 import {
   ActivityIndicator,
   KeyboardAvoidingView,
   Platform,
   Pressable,
+  ScrollView,
   StyleSheet,
   Text,
   TextInput,
@@ -12,266 +13,167 @@ import {
 import { SafeAreaView } from "react-native-safe-area-context";
 import * as SecureStore from "expo-secure-store";
 import { AuthError, getProtectedUser, login, type AuthUser } from "../../services/auth";
-import { getRandomQuote } from "../../services/quotes";
 
-const colors = {
-  background: "#F5F2EA",
-  ink: "#21332D",
-  muted: "#748078",
-  accent: "#537968",
-  card: "#FFFEFA",
-  line: "#E9E5DB",
-};
+const TOKEN_KEY = "authenticated-student-portal-token";
+const colors = { background: "#F3F6FB", ink: "#17243A", muted: "#718097", blue: "#315FEA", card: "#FFFFFF", line: "#E3E9F2", red: "#B42318" };
+const emailPattern = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
-export default function QuotesScreen() {
+export default function StudentPortalScreen() {
   const [user, setUser] = useState<AuthUser | null>(null);
-  const [isCheckingSession, setIsCheckingSession] = useState(true);
-  const [username, setUsername] = useState("emilys");
+  const [token, setToken] = useState<string | null>(null);
+  const [isAuthLoading, setIsAuthLoading] = useState(true);
+  const [email, setEmail] = useState("emily.johnson@x.dummyjson.com");
   const [password, setPassword] = useState("emilyspass");
-  const [authError, setAuthError] = useState("");
-  const [isSigningIn, setIsSigningIn] = useState(false);
-  const [quoteText, setQuoteText] = useState("");
-  const [author, setAuthor] = useState("");
-  const [isLoading, setIsLoading] = useState(true);
-  const [error, setError] = useState("");
+  const [errors, setErrors] = useState<{ email?: string; password?: string }>({});
+  const [authMessage, setAuthMessage] = useState("");
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [isProfileLoading, setIsProfileLoading] = useState(false);
 
-  // Restore a saved token and check it against the protected profile endpoint.
+  // Restore and validate the saved session before showing login or protected content.
   useEffect(() => {
+    let active = true;
     async function restoreSession() {
       try {
-        const savedToken = await SecureStore.getItemAsync("quotes-app-access-token");
-        if (savedToken) setUser(await getProtectedUser(savedToken));
-      } catch (sessionError) {
-        if (sessionError instanceof AuthError && [401, 403].includes(sessionError.status)) {
-          await SecureStore.deleteItemAsync("quotes-app-access-token");
-          setAuthError("Your session expired. Please log in again.");
-        } else {
-          setAuthError("Couldn’t restore your session. Check your connection and try again.");
+        const savedToken = await SecureStore.getItemAsync(TOKEN_KEY);
+        if (savedToken) {
+          const restoredUser = await getProtectedUser(savedToken);
+          if (active) { setToken(savedToken); setUser(restoredUser); }
+        }
+      } catch (error) {
+        if (error instanceof AuthError && [401, 403].includes(error.status)) {
+          await SecureStore.deleteItemAsync(TOKEN_KEY);
+          if (active) setAuthMessage("Session expired, please log in again.");
+        } else if (active) {
+          setAuthMessage("Couldn't restore your session. Check your connection and try again.");
         }
       } finally {
-        setIsCheckingSession(false);
+        if (active) setIsAuthLoading(false);
       }
     }
     void restoreSession();
+    return () => { active = false; };
   }, []);
 
-  const signIn = async () => {
-    setIsSigningIn(true);
-    setAuthError("");
+  async function signIn() {
+    const nextErrors: { email?: string; password?: string } = {};
+    if (!email.trim()) nextErrors.email = "Email is required.";
+    else if (!emailPattern.test(email.trim())) nextErrors.email = "Enter a valid email address.";
+    if (!password) nextErrors.password = "Password is required.";
+    setErrors(nextErrors);
+    setAuthMessage("");
+    if (Object.keys(nextErrors).length) return;
+
+    setIsSubmitting(true);
     try {
-      const token = await login(username.trim(), password);
-      await SecureStore.setItemAsync("quotes-app-access-token", token);
-      let currentUser: AuthUser;
+      const accessToken = await login(email.trim(), password);
+      await SecureStore.setItemAsync(TOKEN_KEY, accessToken);
+      setToken(accessToken);
+      setIsProfileLoading(true);
       try {
-        currentUser = await getProtectedUser(token);
-      } catch (protectedError) {
-        await SecureStore.deleteItemAsync("quotes-app-access-token");
-        throw protectedError;
+        setUser(await getProtectedUser(accessToken));
+      } catch (error) {
+        await SecureStore.deleteItemAsync(TOKEN_KEY);
+        setToken(null);
+        if (error instanceof AuthError && [401, 403].includes(error.status)) {
+          setAuthMessage("Session expired, please log in again.");
+        } else {
+          setAuthMessage(error instanceof Error ? error.message : "Couldn't load your profile. Try again.");
+        }
+      } finally {
+        setIsProfileLoading(false);
       }
-      setUser(currentUser);
-    } catch (signInError) {
-      if (signInError instanceof AuthError && [401, 403].includes(signInError.status)) {
-        setAuthError("Login denied (401/403). Check the demo username and password.");
-      } else if (signInError instanceof Error && signInError.message) {
-        setAuthError(signInError.message);
-      } else {
-        setAuthError("Couldn’t sign in. Check your connection and try again.");
-      }
+    } catch (error) {
+      setAuthMessage(error instanceof AuthError ? error.message : "Couldn't sign in. Check your connection and try again.");
     } finally {
-      setIsSigningIn(false);
+      setIsSubmitting(false);
     }
-  };
-
-  const signOut = async () => {
-    try {
-      await SecureStore.deleteItemAsync("quotes-app-access-token");
-    } finally {
-      setUser(null);
-      setQuoteText("");
-      setAuthor("");
-    }
-  };
-
-  // Keep network and response handling in one place for initial and manual loads.
-  const loadQuote = useCallback(async () => {
-    setIsLoading(true);
-    setError("");
-
-    try {
-      const quote = await getRandomQuote();
-      setQuoteText(quote.text);
-      setAuthor(quote.author);
-    } catch {
-      setError("We couldn’t load a quote right now. Check your connection and try again.");
-    } finally {
-      setIsLoading(false);
-    }
-  }, []);
-
-  // Only load protected-screen content after the user session has been restored.
-  useEffect(() => {
-    if (user) void loadQuote();
-  }, [loadQuote, user]);
-
-  const isEmpty = !quoteText && !error && !isLoading;
-
-  if (isCheckingSession) {
-    return (
-      <SafeAreaView style={styles.safeArea}>
-        <View style={styles.authLoading}>
-          <ActivityIndicator size="large" color={colors.accent} />
-          <Text style={styles.stateText}>Checking your session…</Text>
-        </View>
-      </SafeAreaView>
-    );
   }
 
-  if (!user) {
+  // Clear both secure storage and in-memory session on logout.
+  async function signOut() {
+    try {
+      await SecureStore.deleteItemAsync(TOKEN_KEY);
+    } catch {
+      setAuthMessage("Couldn't clear the saved session. Please try logging out again.");
+      return;
+    }
+    setToken(null);
+    setUser(null);
+    setAuthMessage("");
+    setPassword("");
+  }
+
+  if (isAuthLoading || isProfileLoading) {
+    return <SafeAreaView style={styles.safeArea}><View style={styles.center}><ActivityIndicator size="large" color={colors.blue} /><Text style={styles.mutedText}>Checking your secure session…</Text></View></SafeAreaView>;
+  }
+
+  if (user && token) {
     return (
       <SafeAreaView style={styles.safeArea}>
-        <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : undefined} style={styles.loginPage}>
-          <View style={styles.heading}>
-            <Text style={styles.eyebrow}>QUOTES APP · SECURE LOGIN</Text>
-            <Text style={styles.title}>Welcome back</Text>
-            <Text style={styles.subtitle}>Sign in to open your protected quote space.</Text>
-          </View>
-          <View style={styles.loginCard}>
-            <Text style={styles.inputLabel}>Username</Text>
-            <TextInput accessibilityLabel="Username" autoCapitalize="none" autoCorrect={false} onChangeText={setUsername} placeholder="Enter username" placeholderTextColor="#A2AAA1" style={styles.textInput} value={username} />
-            <Text style={[styles.inputLabel, styles.passwordLabel]}>Password</Text>
-            <TextInput accessibilityLabel="Password" autoCapitalize="none" onChangeText={setPassword} onSubmitEditing={() => void signIn()} placeholder="Enter password" placeholderTextColor="#A2AAA1" secureTextEntry style={styles.textInput} value={password} />
-            {authError ? <Text accessibilityRole="alert" style={styles.authError}>{authError}</Text> : null}
-            <Pressable accessibilityRole="button" accessibilityState={{ disabled: isSigningIn }} disabled={isSigningIn} onPress={() => void signIn()} style={({ pressed }) => [styles.newQuoteButton, styles.loginButton, (pressed || isSigningIn) && styles.pressed]}>
-              {isSigningIn ? <ActivityIndicator color={colors.card} /> : <Text style={styles.newQuoteText}>Log In</Text>}
-            </Pressable>
-            <Text style={styles.demoHint}>Demo account: emilys · emilyspass</Text>
-          </View>
-          <Text style={styles.bottomNote}>Your session token is stored securely on this device.</Text>
-        </KeyboardAvoidingView>
+        <ScrollView contentContainerStyle={styles.page}>
+          <View style={styles.topRow}><View><Text style={styles.eyebrow}>STUDENT PORTAL</Text><Text style={styles.title}>My profile</Text></View><Pressable accessibilityRole="button" onPress={() => void signOut()} style={styles.logout}><Text style={styles.logoutText}>Log out</Text></Pressable></View>
+          <View style={styles.hero}><View style={styles.avatar}><Text style={styles.avatarText}>{user.firstName?.[0] ?? "S"}{user.lastName?.[0] ?? ""}</Text></View><Text style={styles.name}>{user.firstName} {user.lastName}</Text><Text style={styles.subtitle}>Authenticated student</Text><View style={styles.status}><View style={styles.statusDot} /><Text style={styles.statusText}>Secure session active</Text></View></View>
+          <Text style={styles.sectionLabel}>ACCOUNT DETAILS</Text>
+          <View style={styles.detailsCard}><Detail label="Email address" value={user.email} /><Detail label="Student ID" value={String(user.id)} /><Detail label="Username" value={user.username} />{user.role ? <Detail label="Role" value={user.role} last /> : null}</View>
+          <Text style={styles.note}>Your session is restored automatically when you reopen the app.</Text>
+        </ScrollView>
       </SafeAreaView>
     );
   }
 
   return (
     <SafeAreaView style={styles.safeArea}>
-      <View style={styles.page}>
-        <View style={styles.heading}>
-          <Text style={styles.eyebrow}>A MOMENT FOR YOU</Text>
-          <Text style={styles.title}>Words to keep</Text>
-          <Text style={styles.subtitle}>Welcome, {user.firstName}. A little perspective, one quote at a time.</Text>
-        </View>
-
-        <Pressable accessibilityRole="button" onPress={() => void signOut()} style={styles.logoutButton}>
-          <Text style={styles.logoutText}>Log Out</Text>
-        </Pressable>
-
-        <View style={styles.card}>
-          <Text style={styles.quoteMark} accessibilityElementsHidden>“</Text>
-
-          {isLoading ? (
-            <View style={styles.stateBox} accessibilityRole="progressbar">
-              <ActivityIndicator size="large" color={colors.accent} />
-              <Text style={styles.stateText}>Finding a thought for today…</Text>
-            </View>
-          ) : error ? (
-            <View style={styles.stateBox}>
-              <Text style={styles.stateTitle}>A small pause</Text>
-              <Text style={styles.stateText}>{error}</Text>
-              <Pressable
-                accessibilityRole="button"
-                onPress={() => void loadQuote()}
-                style={({ pressed }) => [styles.retryButton, pressed && styles.pressed]}
-              >
-                <Text style={styles.retryText}>Try Again</Text>
-              </Pressable>
-            </View>
-          ) : isEmpty ? (
-            <View style={styles.stateBox}>
-              <Text style={styles.stateTitle}>Nothing here just yet</Text>
-              <Text style={styles.stateText}>Let’s look for a quote to brighten the moment.</Text>
-            </View>
-          ) : (
-            <View style={styles.quoteContent}>
-              <Text style={styles.quoteText}>“{quoteText}”</Text>
-              <View style={styles.authorRow}>
-                <View style={styles.authorRule} />
-                <Text style={styles.author}>{author}</Text>
-              </View>
-            </View>
-          )}
-
-          <View style={styles.cardFooter}>
-            <Text style={styles.footerText}>DAILY INSPIRATION</Text>
-            <View style={styles.footerDot} />
+      <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : undefined} style={styles.keyboard}>
+        <ScrollView contentContainerStyle={styles.loginPage} keyboardShouldPersistTaps="handled">
+          <View style={styles.brandMark}><Text style={styles.brandMarkText}>S</Text></View>
+          <Text style={styles.eyebrow}>AUTHENTICATED STUDENT PORTAL</Text>
+          <Text style={styles.loginTitle}>Welcome back</Text>
+          <Text style={styles.subtitle}>Sign in with your student account to continue.</Text>
+          <View style={styles.form}>
+            <Text style={styles.label}>Email</Text>
+            <TextInput accessibilityLabel="Email" autoCapitalize="none" autoComplete="email" autoCorrect={false} keyboardType="email-address" onChangeText={(value) => { setEmail(value); setErrors((current) => ({ ...current, email: undefined })); }} placeholder="you@example.com" placeholderTextColor="#9AA6B7" style={[styles.input, errors.email ? styles.inputError : null]} value={email} />
+            {errors.email ? <Text accessibilityRole="alert" style={styles.errorText}>{errors.email}</Text> : null}
+            <Text style={[styles.label, styles.passwordLabel]}>Password</Text>
+            <TextInput accessibilityLabel="Password" autoCapitalize="none" autoComplete="password" onChangeText={(value) => { setPassword(value); setErrors((current) => ({ ...current, password: undefined })); }} onSubmitEditing={() => void signIn()} placeholder="Enter your password" placeholderTextColor="#9AA6B7" secureTextEntry style={[styles.input, errors.password ? styles.inputError : null]} value={password} />
+            {errors.password ? <Text accessibilityRole="alert" style={styles.errorText}>{errors.password}</Text> : null}
+            {authMessage ? <Text accessibilityRole="alert" style={styles.authError}>{authMessage}</Text> : null}
+            <Pressable accessibilityRole="button" accessibilityState={{ disabled: isSubmitting }} disabled={isSubmitting} onPress={() => void signIn()} style={({ pressed }) => [styles.loginButton, (pressed || isSubmitting) && styles.pressed]}>
+              {isSubmitting ? <ActivityIndicator color="#FFFFFF" /> : <Text style={styles.loginButtonText}>Log in</Text>}
+            </Pressable>
           </View>
-        </View>
-
-        <Pressable
-          accessibilityRole="button"
-          accessibilityState={{ disabled: isLoading }}
-          disabled={isLoading}
-          onPress={() => void loadQuote()}
-          style={({ pressed }) => [styles.newQuoteButton, (pressed || isLoading) && styles.pressed]}
-        >
-          {isLoading ? (
-            <ActivityIndicator color={colors.card} size="small" />
-          ) : (
-            <Text style={styles.newQuoteText}>New Quote</Text>
-          )}
-        </Pressable>
-        <Text style={styles.bottomNote}>Take what you need. Carry it with you.</Text>
-      </View>
+          <View style={styles.demoBox}><Text style={styles.demoTitle}>Demo account</Text><Text style={styles.demoText}>emily.johnson@x.dummyjson.com</Text><Text style={styles.demoText}>Password: emilyspass</Text></View>
+          <Text style={styles.footer}>Protected with secure on-device session storage</Text>
+        </ScrollView>
+      </KeyboardAvoidingView>
     </SafeAreaView>
   );
 }
 
+function Detail({ label, value, last = false }: { label: string; value: string; last?: boolean }) {
+  return <View style={[styles.detailRow, last && styles.lastDetailRow]}><Text style={styles.detailLabel}>{label}</Text><Text style={styles.detailValue}>{value}</Text></View>;
+}
+
 const styles = StyleSheet.create({
-  safeArea: { flex: 1, backgroundColor: colors.background },
-  authLoading: { alignItems: "center", flex: 1, justifyContent: "center" },
-  loginPage: { flex: 1, justifyContent: "center", paddingHorizontal: 26, paddingVertical: 24 },
-  loginCard: { backgroundColor: colors.card, borderColor: colors.line, borderRadius: 22, borderWidth: 1, padding: 24 },
-  inputLabel: { color: colors.ink, fontSize: 13, fontWeight: "700", marginBottom: 8 },
+  safeArea: { flex: 1, backgroundColor: colors.background }, keyboard: { flex: 1 },
+  center: { alignItems: "center", flex: 1, justifyContent: "center", padding: 24 },
+  page: { flexGrow: 1, justifyContent: "center", padding: 24 },
+  loginPage: { flexGrow: 1, justifyContent: "center", paddingHorizontal: 26, paddingVertical: 32 },
+  brandMark: { alignItems: "center", alignSelf: "center", backgroundColor: colors.blue, borderRadius: 18, height: 58, justifyContent: "center", marginBottom: 24, width: 58 },
+  brandMarkText: { color: "#FFFFFF", fontSize: 28, fontWeight: "800" },
+  eyebrow: { color: colors.blue, fontSize: 11, fontWeight: "800", letterSpacing: 1.6 },
+  loginTitle: { color: colors.ink, fontSize: 34, fontWeight: "800", letterSpacing: -0.7, marginTop: 12 },
+  title: { color: colors.ink, fontSize: 31, fontWeight: "800", letterSpacing: -0.5, marginTop: 8 },
+  subtitle: { color: colors.muted, fontSize: 15, lineHeight: 23, marginTop: 8 },
+  form: { backgroundColor: colors.card, borderColor: colors.line, borderRadius: 20, borderWidth: 1, marginTop: 28, padding: 20 },
+  label: { color: colors.ink, fontSize: 13, fontWeight: "700", marginBottom: 8 },
   passwordLabel: { marginTop: 18 },
-  textInput: { backgroundColor: "#FAF9F5", borderColor: colors.line, borderRadius: 12, borderWidth: 1, color: colors.ink, fontSize: 16, minHeight: 50, paddingHorizontal: 14 },
-  authError: { color: "#A43D38", fontSize: 13, lineHeight: 19, marginTop: 16 },
-  loginButton: { marginTop: 22 },
-  demoHint: { color: colors.muted, fontSize: 12, marginTop: 16, textAlign: "center" },
-  logoutButton: { alignSelf: "flex-end", borderColor: "#C9D4CA", borderRadius: 10, borderWidth: 1, marginBottom: 14, marginTop: -14, paddingHorizontal: 14, paddingVertical: 8 },
-  logoutText: { color: colors.accent, fontSize: 12, fontWeight: "700" },
-  page: { flex: 1, justifyContent: "center", paddingHorizontal: 26, paddingVertical: 24 },
-  heading: { marginBottom: 28 },
-  eyebrow: { color: colors.accent, fontSize: 11, fontWeight: "800", letterSpacing: 2.1 },
-  title: { color: colors.ink, fontSize: 34, fontWeight: "700", letterSpacing: -0.8, marginTop: 10 },
-  subtitle: { color: colors.muted, fontSize: 15, lineHeight: 22, marginTop: 8 },
-  card: {
-    backgroundColor: colors.card,
-    borderColor: colors.line,
-    borderRadius: 24,
-    borderWidth: 1,
-    elevation: 3,
-    minHeight: 310,
-    padding: 26,
-    shadowColor: "#273C31",
-    shadowOffset: { width: 0, height: 8 },
-    shadowOpacity: 0.07,
-    shadowRadius: 18,
-  },
-  quoteMark: { color: "#B7C8BC", fontFamily: "Georgia", fontSize: 72, height: 64, lineHeight: 80 },
-  quoteContent: { flex: 1, justifyContent: "center", paddingBottom: 20, paddingTop: 12 },
-  quoteText: { color: colors.ink, fontFamily: "Georgia", fontSize: 25, lineHeight: 36 },
-  authorRow: { alignItems: "center", flexDirection: "row", marginTop: 24 },
-  authorRule: { backgroundColor: "#9BAFA1", height: 1, marginRight: 12, width: 24 },
-  author: { color: colors.accent, fontSize: 14, fontWeight: "700", letterSpacing: 0.3 },
-  stateBox: { alignItems: "center", flex: 1, justifyContent: "center", minHeight: 160, paddingHorizontal: 8 },
-  stateTitle: { color: colors.ink, fontSize: 20, fontWeight: "700", textAlign: "center" },
-  stateText: { color: colors.muted, fontSize: 14, lineHeight: 21, marginTop: 14, textAlign: "center" },
-  retryButton: { borderColor: colors.accent, borderRadius: 12, borderWidth: 1, marginTop: 18, paddingHorizontal: 20, paddingVertical: 11 },
-  retryText: { color: colors.accent, fontSize: 14, fontWeight: "700" },
-  cardFooter: { alignItems: "center", borderTopColor: colors.line, borderTopWidth: 1, flexDirection: "row", justifyContent: "space-between", paddingTop: 18 },
-  footerText: { color: "#A2AAA1", fontSize: 10, fontWeight: "800", letterSpacing: 1.5 },
-  footerDot: { backgroundColor: "#B7C8BC", borderRadius: 3, height: 6, width: 6 },
-  newQuoteButton: { alignItems: "center", backgroundColor: colors.accent, borderRadius: 15, elevation: 2, justifyContent: "center", marginTop: 22, minHeight: 56, shadowColor: colors.accent, shadowOffset: { width: 0, height: 5 }, shadowOpacity: 0.2, shadowRadius: 8 },
-  newQuoteText: { color: "#FFFFFF", fontSize: 16, fontWeight: "700", letterSpacing: 0.3 },
-  pressed: { opacity: 0.72 },
-  bottomNote: { color: colors.muted, fontSize: 12, letterSpacing: 0.2, marginTop: 20, textAlign: "center" },
+  input: { backgroundColor: "#FCFDFE", borderColor: colors.line, borderRadius: 12, borderWidth: 1, color: colors.ink, fontSize: 15, minHeight: 52, paddingHorizontal: 14 },
+  inputError: { borderColor: colors.red }, errorText: { color: colors.red, fontSize: 12, marginTop: 6 }, authError: { color: colors.red, fontSize: 13, lineHeight: 19, marginTop: 14 },
+  loginButton: { alignItems: "center", backgroundColor: colors.blue, borderRadius: 13, justifyContent: "center", marginTop: 22, minHeight: 52 },
+  loginButtonText: { color: "#FFFFFF", fontSize: 15, fontWeight: "800" }, pressed: { opacity: 0.72 },
+  demoBox: { backgroundColor: "#EAF0FF", borderRadius: 13, marginTop: 18, padding: 14 }, demoTitle: { color: colors.ink, fontSize: 12, fontWeight: "800", marginBottom: 5 }, demoText: { color: colors.muted, fontSize: 12, lineHeight: 18 },
+  footer: { color: colors.muted, fontSize: 11, marginTop: 24, textAlign: "center" }, mutedText: { color: colors.muted, fontSize: 14, marginTop: 14 },
+  topRow: { alignItems: "center", flexDirection: "row", justifyContent: "space-between", marginBottom: 24 }, logout: { borderColor: "#D3DCEB", borderRadius: 11, borderWidth: 1, paddingHorizontal: 14, paddingVertical: 9 }, logoutText: { color: colors.blue, fontSize: 13, fontWeight: "700" },
+  hero: { alignItems: "center", backgroundColor: colors.card, borderColor: colors.line, borderRadius: 22, borderWidth: 1, paddingHorizontal: 20, paddingVertical: 28 }, avatar: { alignItems: "center", backgroundColor: "#EAF0FF", borderRadius: 34, height: 68, justifyContent: "center", width: 68 }, avatarText: { color: colors.blue, fontSize: 22, fontWeight: "800" }, name: { color: colors.ink, fontSize: 24, fontWeight: "800", marginTop: 16 }, status: { alignItems: "center", backgroundColor: "#EAF7F0", borderRadius: 20, flexDirection: "row", marginTop: 18, paddingHorizontal: 12, paddingVertical: 8 }, statusDot: { backgroundColor: "#29935F", borderRadius: 4, height: 8, marginRight: 7, width: 8 }, statusText: { color: "#28744F", fontSize: 12, fontWeight: "700" },
+  sectionLabel: { color: colors.muted, fontSize: 11, fontWeight: "800", letterSpacing: 1.1, marginBottom: 10, marginTop: 26 }, detailsCard: { backgroundColor: colors.card, borderColor: colors.line, borderRadius: 18, borderWidth: 1, paddingHorizontal: 18 }, detailRow: { borderBottomColor: colors.line, borderBottomWidth: 1, paddingVertical: 15 }, lastDetailRow: { borderBottomWidth: 0 }, detailLabel: { color: colors.muted, fontSize: 12, marginBottom: 5 }, detailValue: { color: colors.ink, fontSize: 15, fontWeight: "600" }, note: { color: colors.muted, fontSize: 12, lineHeight: 18, marginTop: 20, textAlign: "center" },
 });
